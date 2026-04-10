@@ -44,3 +44,4 @@ graph TD
 
 ## ⚖️ License
 MIT License - 2026 Lévy / Polygone Ecosystem.
+by Hope
