@@ -1,0 +1,27 @@
+[package]
+name = "polygone-drive"
+version = "0.1.0"
+edition = "2021"
+authors = ["Lévy <contact@soe-ai.dev>"]
+description = "Decentralized file storage on top of Polygone ephemeral network"
+
+[dependencies]
+polygone-core = { path = "../Polygone" }
+
+# Storage and cryptography
+aes-gcm = "0.10"
+rand = "0.8"
+hex = "0.4"
+blake3 = "1"
+
+# Network
+tokio = { version = "1", features = ["full"] }
+libp2p = { version = "0.53", features = ["tokio", "tcp", "noise", "yamux", "kad", "request-response", "cbor", "identify"] }
+
+# Utilities
+anyhow = "1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+clap = { version = "4", features = ["derive"] }
+serde = { version = "1", features = ["derive"] }
+bincode = "1"
