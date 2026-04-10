@@ -23,19 +23,11 @@ pub struct Chunker;
 impl Chunker {
     pub const CHUNK_SIZE: usize = 1024 * 1024; // 1 MB chunks
     
-    /// Reads a file from disk and yields AES-ready 1MB chunks
-    pub fn chunk_file<P: AsRef<Path>>(path: P) -> std::io::Result<Vec<Vec<u8>>> {
-        let mut file = std::fs::File::open(path)?;
-        let mut chunks = Vec::new();
-        use std::io::Read;
-        loop {
-            let mut buffer = vec![0u8; Self::CHUNK_SIZE];
-            let n = file.read(&mut buffer)?;
-            if n == 0 { break; }
-            buffer.truncate(n);
-            chunks.push(buffer);
-        }
-        Ok(chunks)
+    /// Reads a file from disk asynchronously and chunks it.
+    pub async fn stream_file<P: AsRef<Path>>(path: P) -> std::io::Result<impl tokio_stream::Stream<Item = std::io::Result<Vec<u8>>>> {
+        let file = tokio::fs::File::open(path).await?;
+        let stream = tokio_util::io::ReaderStream::with_capacity(file, Self::CHUNK_SIZE);
+        Ok(stream.map(|res| res.map(|bytes| bytes.to_vec())))
     }
 }
 
