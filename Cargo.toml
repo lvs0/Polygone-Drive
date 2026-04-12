@@ -2,20 +2,23 @@
 name = "polygone-drive"
 version = "0.1.0"
 edition = "2021"
-authors = ["l-vs (Hope)"]
-description = "Decentralized file storage on top of Polygone ephemeral network"
+authors = ["Lévy <contact@soe-ai.dev>"]
+description = "Polygone-Drive - Decentralized Encrypted Storage"
 
 [dependencies]
-polygone-core = { path = "../Polygone" }
+polygone = { path = "../Polygone" }
 
 # Storage and cryptography
 aes-gcm = "0.10"
 rand = "0.8"
 hex = "0.4"
 blake3 = "1"
+base64 = "0.22"
 
 # Network
 tokio = { version = "1", features = ["full"] }
+tokio-util = { version = "0.7", features = ["io"] }
+tokio-stream = "0.1"
 libp2p = { version = "0.53", features = ["tokio", "tcp", "noise", "yamux", "kad", "request-response", "cbor", "identify"] }
 
 # Utilities
@@ -25,3 +28,17 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 clap = { version = "4", features = ["derive"] }
 serde = { version = "1", features = ["derive"] }
 bincode = "1"
+uuid = { version = "1", features = ["v4"] }
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "polygone-drive"
+path = "src/main.rs"
+
+[profile.release]
+opt-level = 3
+lto = true
+panic = "abort"
+strip = true
