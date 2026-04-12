@@ -1,52 +1,89 @@
 # ⬡ Polygone-Drive
 
-**Decentralized, Post-Quantum, and Ephemeral Storage.**
+**Distributed, Post-Quantum, Pinned Storage.**
 
-Polygone-Drive is a sharded storage engine built on top of the Polygone protocol. It "vaporizes" your files into small, encrypted fragments (ML-KEM shards) that drift through a distributed DHT.
-
----
-
-**Project origin · Origine :** French engineering · **[l-vs](https://github.com/lvs0)** · collective **Hope** (*by Hope*). Public focus: **post-quantum** protocols — not hosting economics or free-tier setups.
+> ⚠️ **Architecture Clarification**: Polygone-Drive uses the same cryptographic primitives as the ephemeral Polygone network (ML-KEM, Shamir Secret Sharing, AES-256-GCM), but with a different persistence model. Files are pinned on dedicated storage nodes, not subject to the 30s TTL of the message network.
 
 ---
 
-## 🚀 Key Features
+## The Problem: Storage vs Ephemeral
 
-- **Vapor Streaming™**: Start playing videos or audio files instantly. The engine fetches and reconstructs shards in a "sliding window" buffer while you watch.
-- **Vapor Links (Public Sharing)**: Share files without sending physical map files. Generate a `poly://` link that contains the ephemeral reconstruction keys.
-- **Metadata Invisible**: Files are split using Shamir Secret Sharing. No single relay node knows if it's holding a piece of a PDF, an image, or a simple text.
-- **Post-Quantum Secure**: All shards are protected by FIPS 203 (ML-KEM) and FIPS 204 (ML-DSA) primitives.
+The Polygone message network is **ephemeral** — messages vaporize after 30 seconds. This is perfect for metadata-hidden communication, but **not** for file storage.
 
-## 🛠️ Usage
+Polygone-Drive solves this by:
 
-### Upload a file
-```bash
-polygone-drive upload my_secret_data.pdf --recipient public.key
+1. **Same crypto**: ML-KEM-1024 key exchange + Shamir 4-of-7 fragmentation
+2. **Different transport**: Dedicated storage nodes with pinning (not DHT TTL)
+3. **Same privacy**: No single node knows what it's storing
+
+---
+
+## Architecture
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    Polygone-Drive                          │
+├─────────────────────────────────────────────────────────────┤
+│  File → Chunker → Sharding → Encryption → Pinned Storage  │
+│                                                             │
+│  [Alice] uploads file                                       │
+│       ↓                                                    │
+│  ┌──────────────────────────────────────────────────────┐  │
+│  │ 1. Split into chunks (1MB each)                       │  │
+│  │ 2. Encrypt each chunk (AES-256-GCM)                  │  │
+│  │ 3. Shamir-split each encrypted chunk (4-of-7)         │  │
+│  │ 4. Distribute fragments to pinned storage nodes        │  │
+│  └──────────────────────────────────────────────────────┘  │
+│       ↓                                                    │
+│  [Bob] downloads with token                                │
+│       ↓                                                    │
+│  ┌──────────────────────────────────────────────────────┐  │
+│  │ 1. Collect ≥4 fragments from storage nodes            │  │
+│  │ 2. Reconstruct Shamir shares                         │  │
+│  │ 3. Decrypt with recipient's key                      │  │
+│  │ 4. Reassemble file                                   │  │
+│  └──────────────────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────────────────┘
 ```
 
-### Share with a Vapor Link
+---
+
+## Usage
+
 ```bash
-polygone-drive share my_secret_data.pdf.pgd
+# Upload a file
+polygone-drive upload myfile.pdf --recipient peer.pubkey
+
+# Share with a link
+polygone-drive share myfile.pdf.pgd
 # Output: poly://<base64_token>
+
+# Download
+polygone-drive download --token poly://<token> --sk my.key
+
+# Run a storage node
+polygone-drive node --cache-gb 100
 ```
 
-### Stream/Download
+---
+
+## Key Features
+
+- **Vapor Streaming**: Stream large files before download completes
+- **Post-Quantum**: ML-KEM-1024 + ML-DSA-87
+- **Secret Sharing**: No node knows the full file
+- **Anonymous Pins**: Storage nodes don't know what they're storing
+
+---
+
+## Building
+
 ```bash
-polygone-drive download --token poly://<token> --sk my_private.key
+cargo build --release
+./target/release/polygone-drive help
 ```
 
-## 🏗️ Architecture
+---
 
-```mermaid
-graph TD
-    A[File] --> B{Sharding Engine}
-    B -->|Fragment 1| C[Relay A]
-    B -->|Fragment 2| D[Relay B]
-    B -->|Fragment 3| E[Relay C]
-    C -.->|Drift| F[DHT]
-    D -.->|Drift| F
-    E -.->|Drift| F
-```
-
-## ⚖️ License
-MIT License — 2026 · **l-vs** · **Hope** (*by Hope*) · Polygone ecosystem
+**License**: MIT  
+**Author**: l-vs (Hope)
