@@ -4,6 +4,12 @@
 
 Polygone-Drive is a sharded storage engine built on top of the Polygone protocol. It "vaporizes" your files into small, encrypted fragments (ML-KEM shards) that drift through a distributed DHT.
 
+---
+
+**Project origin · Origine :** French engineering · **[l-vs](https://github.com/lvs0)** · collective **Hope** (*by Hope*). Public focus: **post-quantum** protocols — not hosting economics or free-tier setups.
+
+---
+
 ## 🚀 Key Features
 
 - **Vapor Streaming™**: Start playing videos or audio files instantly. The engine fetches and reconstructs shards in a "sliding window" buffer while you watch.
@@ -43,5 +49,4 @@ graph TD
 ```
 
 ## ⚖️ License
-MIT License - 2026 Lévy / Polygone Ecosystem.
-by Hope
+MIT License — 2026 · **l-vs** · **Hope** (*by Hope*) · Polygone ecosystem
