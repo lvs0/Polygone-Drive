@@ -156,30 +156,21 @@ async fn upload_file(file_path: &str, peer_pk_path: &str, ephemeral: bool, ttl_s
         c_idx += 1;
         total_bytes += chunk.len() as u64;
 
-        // Step 1: Generate random session key for this chunk using OsRng
+        // Step 1: Generate random AES-256-GCM session key for this chunk
         use rand::RngCore;
         let mut session_key_bytes = [0u8; 32];
         rand::rngs::OsRng.fill_bytes(&mut session_key_bytes);
         let drive_key = storage::DriveKey::new(session_key_bytes);
 
-        // Step 2: Encrypt chunk with AES-256-GCM
-        let (ciphertext, nonce) = drive_key.encrypt(&chunk);
+        // Step 2: AES-256-GCM encrypt + Shamir SSS-4-7 split (delegated to storage.rs)
+        let enc_fragments = storage::upload_encrypted_fragmented_chunk(&chunk, &drive_key, c_idx)
+            .map_err(|e| anyhow::anyhow!("Upload chunk failed: {e}"))?;
 
-        // Step 3: Split encrypted payload into 7 Shamir fragments (threshold 4)
-        let fragments = polygone::crypto::shamir::split(&ciphertext, 4, 7)
-            .map_err(|e| anyhow::anyhow!("Shamir split failed: {:?}", e))?;
-
-        // Step 4: Store encrypted fragments locally (in real impl, broadcast to network)
-        for frag in &fragments {
-            let enc_frag = storage::EncryptedFragment {
-                chunk_index: c_idx,
-                fragment_index: frag.id.0,
-                nonce,
-                ciphertext: frag.data.clone(),
-            };
-            let hex_id = hex::encode(file_hash.as_bytes());
-            let store_path = format!(".drive_cache/{}_{}_{}.efrag", hex_id, c_idx, frag.id.0);
-            tokio::fs::create_dir_all(".drive_cache").await?;
+        // Step 3: Store encrypted fragments locally (in real impl, broadcast to DHT network)
+        let hex_id = hex::encode(file_hash.as_bytes());
+        tokio::fs::create_dir_all(".drive_cache").await?;
+        for enc_frag in &enc_fragments {
+            let store_path = format!(".drive_cache/{}_{}_{}.efrag", hex_id, c_idx, enc_frag.fragment_index);
             tokio::fs::write(&store_path, enc_frag.to_bytes()).await?;
         }
 

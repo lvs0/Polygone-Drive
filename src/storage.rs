@@ -2,6 +2,98 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
+// ── Shamir SSS-4-7 + AES encrypt on upload chunks ────────────────────────────
+
+use sharks::{Sharks, Share};
+use rand::rngs::OsRng;
+
+/// A unique fragment identifier [1..=n].
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct FragmentId(pub u8);
+
+/// A single Shamir fragment wrapping a share.
+#[derive(Clone, Serialize, Deserialize)]
+pub struct ShamirFragment {
+    pub id: FragmentId,
+    pub data: Vec<u8>,
+}
+
+/// Split `secret` into 7 fragments (threshold 4) using Shamir SSS.
+/// Any 4 fragments reconstruct the secret; fewer reveal nothing.
+pub fn shamir_split(secret: &[u8]) -> Result<Vec<ShamirFragment>, String> {
+    const THRESHOLD: u8 = 4;
+    const N: u8 = 7;
+    if secret.is_empty() {
+        return Err("Cannot split empty secret".into());
+    }
+    let sharks = Sharks(THRESHOLD);
+    let dealer = sharks.dealer_rng(secret, &mut OsRng);
+    let fragments: Vec<ShamirFragment> = dealer
+        .take(N as usize)
+        .enumerate()
+        .map(|(i, share)| ShamirFragment {
+            id: FragmentId(i as u8 + 1),
+            data: Vec::from(&share),
+        })
+        .collect();
+    Ok(fragments)
+}
+
+/// Reconstruct a secret from at least 4 Shamir fragments.
+pub fn shamir_reconstruct(fragments: &[ShamirFragment], threshold: u8) -> Result<Vec<u8>, String> {
+    if fragments.len() < threshold as usize {
+        return Err(format!("need {} fragments, got {}", threshold, fragments.len()));
+    }
+    let sharks = Sharks(threshold);
+    let shares: Result<Vec<Share>, _> = fragments
+        .iter()
+        .map(|f| Share::try_from(f.data.as_slice()).map_err(|e| e.to_string()))
+        .collect();
+    let secret = sharks
+        .recover(shares?.iter())
+        .map_err(|e| e.to_string())?;
+    Ok(secret)
+}
+
+/// Upload a single chunk: AES-256-GCM encrypt, then Shamir SSS-4-7 split.
+///
+/// Returns one `EncryptedFragment` per Shamir share (7 total).
+///
+/// # Arguments
+/// * `chunk`        – raw 1 MB chunk bytes
+/// * `drive_key`    – AES-256-GCM session key for this chunk
+/// * `chunk_index`  – ordinal index of this chunk in the file
+///
+/// # Example
+/// ```ignore
+/// let frags = upload_encrypted_fragmented_chunk(&chunk, &drive_key, 0)?;
+/// // → 7 EncryptedFragments ready to broadcast to DHT nodes
+/// ```
+pub fn upload_encrypted_fragmented_chunk(
+    chunk: &[u8],
+    drive_key: &DriveKey,
+    chunk_index: u32,
+) -> Result<Vec<EncryptedFragment>, String> {
+    // Step 1: AES-256-GCM encrypt
+    let (ciphertext, nonce) = drive_key.encrypt(chunk);
+
+    // Step 2: Shamir SSS-4-7 split the encrypted payload
+    let fragments = shamir_split(&ciphertext)?;
+
+    // Step 3: Wrap as EncryptedFragments
+    let enc_fragments: Vec<EncryptedFragment> = fragments
+        .into_iter()
+        .map(|frag| EncryptedFragment {
+            chunk_index,
+            fragment_index: frag.id.0,
+            nonce,
+            ciphertext: frag.data,
+        })
+        .collect();
+
+    Ok(enc_fragments)
+}
+
 /// The "Treasure Map" file (.pgd) describing a stored file on the Polygone-Drive network.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct DriveMap {
