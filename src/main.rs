@@ -143,48 +143,79 @@ async fn upload_file(file_path: &str, peer_pk_path: &str, ephemeral: bool, ttl_s
     swarm.listen_on("/ip4/0.0.0.0/tcp/0".parse()?)?;
 
     let file_size = tokio::fs::metadata(file_path).await?.len();
+    let file_bytes = std::fs::read(file_path)?;
+    let file_hash = blake3::hash(file_bytes.as_slice());
     let mut chunk_stream = storage::Chunker::stream_file(file_path).await?;
     let mut c_idx = 0u32;
     let mut total_bytes = 0u64;
     let start = std::time::Instant::now();
-    
+
+    // ── Collect encrypted + fragmented chunks ──
     while let Some(chunk_res) = chunk_stream.next().await {
         let chunk = chunk_res?;
         c_idx += 1;
         total_bytes += chunk.len() as u64;
+
+        // Step 1: Generate random session key for this chunk using OsRng
+        use rand::RngCore;
+        let mut session_key_bytes = [0u8; 32];
+        rand::rngs::OsRng.fill_bytes(&mut session_key_bytes);
+        let drive_key = storage::DriveKey::new(session_key_bytes);
+
+        // Step 2: Encrypt chunk with AES-256-GCM
+        let (ciphertext, nonce) = drive_key.encrypt(&chunk);
+
+        // Step 3: Split encrypted payload into 7 Shamir fragments (threshold 4)
+        let fragments = polygone::crypto::shamir::split(&ciphertext, 4, 7)
+            .map_err(|e| anyhow::anyhow!("Shamir split failed: {:?}", e))?;
+
+        // Step 4: Store encrypted fragments locally (in real impl, broadcast to network)
+        for frag in &fragments {
+            let enc_frag = storage::EncryptedFragment {
+                chunk_index: c_idx,
+                fragment_index: frag.id.0,
+                nonce,
+                ciphertext: frag.data.clone(),
+            };
+            let hex_id = hex::encode(file_hash.as_bytes());
+            let store_path = format!(".drive_cache/{}_{}_{}.efrag", hex_id, c_idx, frag.id.0);
+            tokio::fs::create_dir_all(".drive_cache").await?;
+            tokio::fs::write(&store_path, enc_frag.to_bytes()).await?;
+        }
+
         let mbps = (total_bytes as f64) / start.elapsed().as_secs_f64() / 1_000_000.0;
-        println!("  [UPLOAD] Chunk {c_idx} ({}/{}) — {:.2} MB/s", 
+        println!("  [UPLOAD] Chunk {c_idx} ({}/{}) — {:.2} MB/s ✓ encrypted + 4-of-7 Shamir",
             total_bytes, file_size, mbps);
     }
 
-    let file_hash = blake3::hash(std::fs::read(file_path)?.as_slice());
-    
     let map = storage::DriveMap {
         file_id: *file_hash.as_bytes(),
         file_name: file_path.to_string(),
         num_chunks: c_idx,
         owner_pk: ciphertext.as_bytes().to_vec(),
+        fragments_per_chunk: storage::SHAMIR_N_FRAGMENTS,
     };
-    
+
     let map_path_out = format!("{}.pgd", file_path);
-    std::fs::write(&map_path_out, bincode::serialize(&map)?)?;
-    
+    map.save(&map_path_out)?;
+
+    println!();
     println!("  ✓ Upload complete!");
     println!("    File: {}", map_path_out);
     println!("    Size: {} bytes", file_size);
     println!("    Hash: {}", file_hash);
-    println!("    Chunks: {}", c_idx);
+    println!("    Chunks: {} (each → {} encrypted fragments)", c_idx, storage::SHAMIR_N_FRAGMENTS);
     if ephemeral {
         println!("    Ephemeral: {}s TTL", ttl_seconds);
     }
-    
+
     Ok(())
 }
 
 fn create_share_link(map_path: &str, ephemeral: bool, ttl_seconds: u64, max_downloads: u32) -> anyhow::Result<()> {
     let map_bytes = std::fs::read(map_path)?;
     
-    let share_link = if ephemeral {
+    let share_link: Vec<u8> = if ephemeral {
         let link_data = links::EphemeralLink {
             map_data: map_bytes,
             created_at: std::time::SystemTime::now()
@@ -195,7 +226,7 @@ fn create_share_link(map_path: &str, ephemeral: bool, ttl_seconds: u64, max_down
             max_downloads,
             downloads: 0,
         };
-        serde_json::to_vec(&share_link)?
+        serde_json::to_vec(&link_data)?
     } else {
         map_bytes.clone()
     };
@@ -274,7 +305,7 @@ async fn download_file(map_path: Option<&str>, sk_path: &str, token: Option<&str
     println!("  [DHT] Resolving {} nodes...", nodes.len());
     let mut node_to_peer = std::collections::HashMap::new();
     for node_id in &nodes {
-        let key = kad::RecordKey::new(node_id.as_bytes());
+        let key = kad::RecordKey::new(&node_id.0);
         swarm.behaviour_mut().kademlia.get_record(key);
     }
 
@@ -286,7 +317,7 @@ async fn download_file(map_path: Option<&str>, sk_path: &str, token: Option<&str
                     if let kad::QueryResult::GetRecord(Ok(kad::GetRecordOk::FoundRecord(record))) = result {
                         let peer_id = libp2p::PeerId::from_bytes(&record.record.value).unwrap();
                         for nid in &nodes {
-                            if nid.as_bytes() == record.record.key.as_ref() {
+                            if nid.0.as_ref() == record.record.key.as_ref() {
                                 node_to_peer.insert(*nid, peer_id);
                                 resolved_count += 1;
                                 break;
@@ -304,7 +335,7 @@ async fn download_file(map_path: Option<&str>, sk_path: &str, token: Option<&str
     }
 
     let out_path = output.unwrap_or_else(|| format!("recovered_{}", map.file_name));
-    let file = if stream {
+    let mut file = if stream {
         None
     } else {
         Some(tokio::fs::File::create(&out_path).await?)
@@ -313,7 +344,8 @@ async fn download_file(map_path: Option<&str>, sk_path: &str, token: Option<&str
 
     for c_idx in 0..map.num_chunks {
         print!("\r  [DOWNLOAD] Chunk {}/{}...", c_idx + 1, map.num_chunks);
-        std::io::stdout().flush()?;
+        use tokio::io::AsyncWriteExt;
+            tokio::io::stdout().flush().await?;
         
         let mut fragments = Vec::new();
         for node_id in &nodes {
@@ -343,7 +375,7 @@ async fn download_file(map_path: Option<&str>, sk_path: &str, token: Option<&str
         
         let chunk_data = session.receive(fragments)?;
         if stream {
-            std::io::stdout().write_all(&chunk_data)?;
+            tokio::io::stdout().write_all(&chunk_data).await?;
         } else if let Some(ref mut f) = file {
             use tokio::io::AsyncWriteExt;
             f.write_all(&chunk_data).await?;
@@ -395,10 +427,10 @@ async fn start_node(listen: &str, cache_gb: usize, enable_compute: bool, max_cpu
                     }
                 )) => {
                     if let Some(data) = request.data {
-                        let _ = store.store(&request.file_id, request.chunk_index, request.fragment_index, &data).await;
+                        let _ = store.store(&request.file_id, request.chunk_index, request.fragment_index as u8, &data).await;
                         let _ = swarm.behaviour_mut().request_response.send_response(channel, network::ChunkResponse { success: true, payload: vec![] });
                     } else {
-                        let res = if let Ok(data) = store.retrieve(&request.file_id, request.chunk_index, request.fragment_index).await {
+                        let res = if let Ok(data) = store.retrieve(&request.file_id, request.chunk_index, request.fragment_index as u8).await {
                             network::ChunkResponse { success: true, payload: data }
                         } else {
                             network::ChunkResponse { success: false, payload: vec![] }
