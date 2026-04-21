@@ -2,26 +2,22 @@
 name = "polygone-drive"
 version = "0.1.0"
 edition = "2021"
-authors = ["Lévy <contact@soe-ai.dev>"]
-description = "Polygone-Drive - Decentralized Encrypted Storage"
+authors = ["l-vs (Hope)"]
+description = "Decentralized file storage on top of Polygone ephemeral network"
 
 [dependencies]
-polygone = { path = "../Polygone" }
+polygone = { path = "../../Polygone/Polygone-main" }
 
 # Storage and cryptography
 aes-gcm = "0.10"
 rand = "0.8"
 hex = "0.4"
 blake3 = "1"
-base64 = "0.22"
-bincode = "1"
+sharks = "0.5"
 zeroize = "1"
-sharks = "0.4"
 
 # Network
 tokio = { version = "1", features = ["full"] }
-tokio-util = { version = "0.7", features = ["io"] }
-tokio-stream = "0.1"
 libp2p = { version = "0.53", features = ["tokio", "tcp", "noise", "yamux", "kad", "request-response", "cbor", "identify"] }
 
 # Utilities
@@ -30,15 +26,7 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 clap = { version = "4", features = ["derive"] }
 serde = { version = "1", features = ["derive"] }
-serde_json = "1"
-uuid = { version = "1", features = ["v4"] }
-
-[[bin]]
-name = "polygone-drive"
-path = "src/main.rs"
-
-[profile.release]
-opt-level = 3
-lto = true
-panic = "abort"
-strip = true
+bincode = "1"
+tokio-util = { version = "0.7", features = ["io"] }
+base64 = "0.22"
+tokio-stream = "0.1"
