@@ -207,7 +207,7 @@ impl RelayStore {
 
         // Check if we have enough fragments
         if fragments.len() < encrypted_chunk.threshold as usize {
-            return Err(polygone::PolygoneError::ShamirError(
+            return Err(polygone::PolygoneError::ShamirReconstruct(
                 format!("Only {} of {} fragments available", fragments.len(), encrypted_chunk.threshold)
             ));
         }
