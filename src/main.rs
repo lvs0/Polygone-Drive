@@ -147,7 +147,7 @@ async fn main() -> anyhow::Result<()> {
             println!("  [BOB] Resolving topology via DHT...");
             let mut node_to_peer = std::collections::HashMap::new();
             for node_id in &nodes {
-                let key = kad::RecordKey::new(&node_id.0);
+                let key = kad::RecordKey::new(&node_id.as_bytes());
                 swarm.behaviour_mut().kademlia.get_record(key);
             }
 
@@ -162,7 +162,7 @@ async fn main() -> anyhow::Result<()> {
                                 let peer_id = libp2p::PeerId::from_bytes(&record.record.value).unwrap();
                                 // We find which NodeId this record corresponds to by checking key
                                 for nid in &nodes {
-                                    if nid.0.as_ref() == record.record.key.as_ref() {
+                                    if nid.as_bytes().as_ref() == record.record.key.as_ref() {
                                         node_to_peer.insert(*nid, peer_id);
                                         resolved_count += 1;
                                         break;
