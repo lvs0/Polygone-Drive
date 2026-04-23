@@ -6,7 +6,7 @@ authors = ["l-vs (Hope)"]
 description = "Decentralized file storage on top of Polygone ephemeral network"
 
 [dependencies]
-polygone = { path = "../../Polygone/Polygone-main" }
+polygone = { path = "../Polygone" }
 
 # Storage and cryptography
 aes-gcm = "0.10"
@@ -18,7 +18,8 @@ zeroize = "1"
 
 # Network
 tokio = { version = "1", features = ["full"] }
-libp2p = { version = "0.53", features = ["tokio", "tcp", "noise", "yamux", "kad", "request-response", "cbor", "identify"] }
+libp2p = { version = "0.53", features = ["tcp", "noise", "yamux", "kad", "request-response", "cbor", "identify", "macros"] }
+libp2p-swarm = { version = "0.44", features = ["macros"] }
 
 # Utilities
 anyhow = "1"

@@ -147,7 +147,7 @@ async fn main() -> anyhow::Result<()> {
             println!("  [BOB] Resolving topology via DHT...");
             let mut node_to_peer = std::collections::HashMap::new();
             for node_id in &nodes {
-                let key = kad::RecordKey::new(node_id.as_bytes());
+                let key = kad::RecordKey::new(&node_id.0);
                 swarm.behaviour_mut().kademlia.get_record(key);
             }
 
