@@ -61,7 +61,7 @@ async fn main() -> anyhow::Result<()> {
     match cli.command {
         Commands::Upload { file_path, peer_pk_path } => {
             use polygone::{protocol::Session, crypto::kem::KemPublicKey};
-            use libp2p::{identity, futures::StreamExt, swarm::SwarmEvent, kad, request_response};
+            use libp2p::{identity, futures::StreamExt};
 
             println!("⬡ POLYGONE-DRIVE — Uploading {file_path}...");
 
@@ -85,7 +85,7 @@ async fn main() -> anyhow::Result<()> {
             // In a better version, we would sustain the swarm and discovery concurrently
             
             while let Some(chunk_res) = chunk_stream.next().await {
-                let chunk = chunk_res?;
+                let _chunk = chunk_res?;
                 c_idx += 1;
                 println!("  [ALICE] Streaming chunk {c_idx}...");
                 // (Existing assignment and RR logic...)
@@ -213,7 +213,7 @@ async fn main() -> anyhow::Result<()> {
             println!("  ✓ File recovered: {}", out_path);
         }
         Commands::Node { listen, cache_gb } => {
-            use libp2p::{identity, futures::StreamExt, swarm::SwarmEvent, kad};
+            use libp2p::{identity, futures::StreamExt, swarm::SwarmEvent};
             
             println!("⬡ POLYGONE-DRIVE NODE");
             println!("  Allocated Cache : {cache_gb} GB");
