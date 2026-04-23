@@ -18,7 +18,7 @@ zeroize = "1"
 
 # Network
 tokio = { version = "1", features = ["full"] }
-libp2p = { version = "0.53", features = ["tcp", "noise", "yamux", "kad", "request-response", "cbor", "identify", "macros"] }
+libp2p = { version = "0.53", features = ["tcp", "noise", "yamux", "kad", "request-response", "cbor", "identify", "macros", "tokio"] }
 libp2p-swarm = { version = "0.44", features = ["macros"] }
 
 # Utilities
